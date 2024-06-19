@@ -1,36 +1,24 @@
 resource "aws_dynamodb_table" "visa_bulletin_data" {
   name           = "VisaBulletinData"
-  billing_mode   = "PROVISIONED"
-  read_capacity  = 5
-  write_capacity = 5
-  hash_key       = "pk" # Partition key
-  range_key      = "sk" # Sort key
+  billing_mode   = "PAY_PER_REQUEST"
+
+  hash_key       = "pk"
+  range_key      = "sk"
 
   attribute {
     name = "pk"
-    type = "S" # String type
+    type = "S"
   }
 
   attribute {
     name = "sk"
-    type = "S" # String type
-  }
-
-  global_secondary_index {
-    name            = "CountryIndex"
-    hash_key        = "pk"
-    range_key       = "sk"
-    write_capacity  = 5
-    read_capacity   = 5
-    projection_type = "ALL"
+    type = "S"
   }
 }
 
 resource "aws_dynamodb_table" "processed_urls" {
   name           = "ProcessedURLs"
-  billing_mode   = "PROVISIONED"
-  read_capacity  = 5
-  write_capacity = 5
+  billing_mode   = "PAY_PER_REQUEST"
   hash_key       = "url"
 
   attribute {

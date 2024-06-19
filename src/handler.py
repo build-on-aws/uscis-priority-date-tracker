@@ -1,9 +1,7 @@
 import boto3
 import re
 import requests
-import json
 from bs4 import BeautifulSoup
-from collections import defaultdict
 from datetime import datetime
 from boto3.dynamodb.conditions import Key
 from operator import itemgetter
@@ -83,7 +81,6 @@ def scrape_visa_bulletin(url):
 
     return employment_based_data
 
-
 # Custom serialization function for datetime objects
 def datetime_serializer(obj):
     if isinstance(obj, datetime):
@@ -95,37 +92,52 @@ def store_data(data):
         print("Storing data")
         for item in data:
             filing_type = item['filing_type']
-            category = item['category']
             country = item['country']
-            bulletin_date = item['bulletin_date']
-            date = item['date']
-            pk = f"{filing_type}#{category}"
-            sk = f"{country}"
+            category = item['category']
+            bulletin_date = datetime.strptime(item['bulletin_date'], "%Y-%m-%d")
+            date = datetime.strptime(item['date'], "%Y-%m-%d")
+
+            pk = f"FILING_TYPE#{filing_type}#CATEGORY#{category}#COUNTRY#{country}"
+            sk = f"BULLETIN_DATE#{bulletin_date.strftime('%Y-%m-%d')}"
+
             table.put_item(
                 Item={
-                        'pk': pk,
-                        'sk': sk,
-                        'filing_type': filing_type,
-                        'category': category,
-                        'country': country,
-                        'bulletin_date': bulletin_date,
-                        'date': date
-                    }
-                )
+                    'pk': pk,
+                    'sk': sk,
+                    'filing_type': filing_type,
+                    'country': country,
+                    'category': category,
+                    'bulletin_date': bulletin_date.strftime("%Y-%m-%d"),
+                    'date': date.strftime("%Y-%m-%d")
+                }
+            )
         print("Done storing data")
     except Exception as e:
         print(f"Unable to store the data, error: {e}")
 
-def read_data(filing_type = 'Final Date', category = '3rd', country = 'All Chargeability Areas Except Those Listed'):
-
-    pk = f"{filing_type}#{category}"
-    sk_prefix = f"{country}"
+def read_data(filing_type='Final Date', category='3rd', country='All Chargeability Areas Except Those Listed'):
+    pk = f"FILING_TYPE#{filing_type}#CATEGORY#{category}#COUNTRY#{country}"
 
     response = table.query(
-        KeyConditionExpression=Key('pk').eq(pk) & Key('sk').begins_with(sk_prefix)
+        KeyConditionExpression=Key('pk').eq(pk),
+        ScanIndexForward=False  # Reverse the order to get the latest bulletin_date first
     )
 
-    return response['Items']
+    items = response['Items']
+
+    # Sort the items by bulletin_date in descending order
+    sorted_items = sorted(items, key=lambda x: x['sk'], reverse=True)
+
+    # Print the header
+    print(f"Retrieved the [{filing_type}] data for [{category}] for [{country}]:")
+
+    # Print each item
+    for item in sorted_items:
+        date = item['date']
+        bulletin_date = item['bulletin_date']
+        print(f"Bulletin {bulletin_date}: {date}")
+
+    return sorted_items
 
 def read_data_locally(data, filing_type = 'Final Date', category = '3rd', country = 'All Chargeability Areas Except Those Listed'):
     # Filter the data based on filing_type, category, and country
@@ -161,10 +173,10 @@ def lambda_handler(event, context):
     for link in visa_bulletin_links:
         if '2022' in link or '2023' in link or '2024' in link:
             # Check if the URL has been processed
-            # response = processed_urls_table.get_item(Key={'url': link})
-            # if 'Item' in response:
-            #     print(f"Skipping URL: {link} (already processed)")
-            #     continue
+            response = processed_urls_table.get_item(Key={'url': link})
+            if 'Item' in response:
+                print(f"Skipping URL: {link} (already processed)")
+                continue
 
             # Process the URL
             print(f"Processing URL: {link}")
@@ -172,15 +184,14 @@ def lambda_handler(event, context):
             data.extend(scrape_visa_bulletin(url))
 
             # Store the processed URL in DynamoDB
-            # processed_urls_table.put_item(Item={'url': link})
+            processed_urls_table.put_item(Item={'url': link})
 
 
-    # store_data(data)
-    # eb3_data = read_data()
+    store_data(data)
+    eb3_data = read_data()
 
     # Temporary fix so that data is at least returned.
-    eb3_data = read_data_locally(data)
-
+    # eb3_data = read_data_locally(data)
 
     return {
         'statusCode': 200,
