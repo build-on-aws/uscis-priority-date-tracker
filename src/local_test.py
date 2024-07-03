@@ -1,4 +1,4 @@
-from handler import lambda_handler
+from retriever import lambda_handler
 
 class MockContext:
     def __init__(self):
@@ -13,9 +13,11 @@ class MockContext:
 mock_context = MockContext()
 
 mock_event = {
-    "key1": "value1",
-    "key2": "value2",
-    # Add any other relevant data for your event
+    'queryStringParameters': {
+        'filing_type': 'FINAL_DATE',
+        'category': 'THIRD',
+        'country': 'ALL_AREAS'
+    }
 }
 
 result = lambda_handler(mock_event, mock_context)

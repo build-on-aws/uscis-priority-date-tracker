@@ -1,7 +1,3 @@
-variable "aws_profile" {
-    default = "development"
-}
-
 variable "aws_region" {
   default = "us-west-2"
 }

@@ -1,15 +1,20 @@
 import boto3
+import os
 import re
 import requests
+from enums import FilingType, Country, Category
 from bs4 import BeautifulSoup
 from datetime import datetime
-from boto3.dynamodb.conditions import Key
-from operator import itemgetter
 
 # Initialize DynamoDB client
 dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('VisaBulletinData')
-processed_urls_table = dynamodb.Table('ProcessedURLs')
+
+table_name = os.environ.get('BULLETIN_DATA', 'VisaBulletinData')
+table = dynamodb.Table(table_name)
+
+processed_urls_table_name = os.environ.get('PROCESSED_BULLETIN_URLS', 'ProcessedURLs')
+processed_urls_table = dynamodb.Table(processed_urls_table_name)
+
 
 def scrape_visa_bulletin(url):
     print("Processing url: ", url)
@@ -115,46 +120,6 @@ def store_data(data):
     except Exception as e:
         print(f"Unable to store the data, error: {e}")
 
-def read_data(filing_type='Final Date', category='3rd', country='All Chargeability Areas Except Those Listed'):
-    pk = f"FILING_TYPE#{filing_type}#CATEGORY#{category}#COUNTRY#{country}"
-
-    response = table.query(
-        KeyConditionExpression=Key('pk').eq(pk),
-        ScanIndexForward=False  # Reverse the order to get the latest bulletin_date first
-    )
-
-    items = response['Items']
-
-    # Sort the items by bulletin_date in descending order
-    sorted_items = sorted(items, key=lambda x: x['sk'], reverse=True)
-
-    # Print the header
-    print(f"Retrieved the [{filing_type}] data for [{category}] for [{country}]:")
-
-    # Print each item
-    for item in sorted_items:
-        date = item['date']
-        bulletin_date = item['bulletin_date']
-        print(f"Bulletin {bulletin_date}: {date}")
-
-    return sorted_items
-
-def read_data_locally(data, filing_type = 'Final Date', category = '3rd', country = 'All Chargeability Areas Except Those Listed'):
-    # Filter the data based on filing_type, category, and country
-    filtered_data = [entry for entry in data
-                    if entry['filing_type'] == filing_type
-                    and entry['category'] == category
-                    and entry['country'] == country]
-
-    # Sort the filtered data in descending order by bulletin_date
-    sorted_data = sorted(filtered_data, key=itemgetter('bulletin_date'), reverse=True)
-
-    # Print the sorted data
-    for entry in sorted_data:
-        print(f"Bulletin Date: {entry['bulletin_date']}, Date: {entry['date']}")
-
-    return sorted_data
-
 def lambda_handler(event, context):
     base_url = 'https://travel.state.gov/content/travel/en/legal/visa-law0/visa-bulletin.html'
     response = requests.get(base_url)
@@ -181,19 +146,17 @@ def lambda_handler(event, context):
             # Process the URL
             print(f"Processing URL: {link}")
             url = f"https://travel.state.gov{link}"
-            data.extend(scrape_visa_bulletin(url))
+            url_data = scrape_visa_bulletin(url)
+            data.extend(scrape_visa_bulletin(url_data))
+
+            # Store the data
+            store_data(url_data)
 
             # Store the processed URL in DynamoDB
             processed_urls_table.put_item(Item={'url': link})
-
-
-    store_data(data)
-    eb3_data = read_data()
-
-    # Temporary fix so that data is at least returned.
-    # eb3_data = read_data_locally(data)
+    
 
     return {
         'statusCode': 200,
-        'body': eb3_data
+        'body': 'Successfully scraped the latest USCIS bulletin data.'
     }
